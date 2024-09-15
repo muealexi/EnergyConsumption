@@ -34,28 +34,28 @@ df['dE_Combined_Cost_perMonth'] = (df.E_El_Cost_perMonth+df.E_Gas_Cost_perMonth)
 # Consumption per User
 Year1End = 365 + 2
 AriEnd = 287
-consumptionTot_El = (df.Counter_El[Year1End] - df.Counter_El[0])
-consumptionTot_Gas = (df.Counter_Gas[Year1End] - df.Counter_Gas[0])
+consumptionTot_El = (df.Counter_El.iloc[Year1End] - df.Counter_El.iloc[0])
+consumptionTot_Gas = (df.Counter_Gas.iloc[Year1End] - df.Counter_Gas.iloc[0])
 
-consumptionAri_El = (df.Counter_El[AriEnd] - df.Counter_El[0]) / 2
-consumptionAri_Gas = (df.Counter_Gas[AriEnd] - df.Counter_Gas[0]) / 2
-consumptionQuentin_El = (df.Counter_El[Year1End] - df.Counter_El[AriEnd+1]) / 2
-consumptionQuentin_Gas = (df.Counter_Gas[Year1End] - df.Counter_Gas[AriEnd+1]) / 2
-consumptionAli_El = (df.Counter_El[Year1End] - df.Counter_El[0]) / 2
-consumptionAli_Gas = (df.Counter_Gas[Year1End] - df.Counter_Gas[0]) / 2
+consumptionAri_El = (df.Counter_El.iloc[AriEnd] - df.Counter_El.iloc[0]) / 2
+consumptionAri_Gas = (df.Counter_Gas.iloc[AriEnd] - df.Counter_Gas.iloc[0]) / 2
+consumptionQuentin_El = (df.Counter_El.iloc[Year1End] - df.Counter_El.iloc[AriEnd+1]) / 2
+consumptionQuentin_Gas = (df.Counter_Gas.iloc[Year1End] - df.Counter_Gas.iloc[AriEnd+1]) / 2
+consumptionAli_El = (df.Counter_El.iloc[Year1End] - df.Counter_El.iloc[0]) / 2
+consumptionAli_Gas = (df.Counter_Gas.iloc[Year1End] - df.Counter_Gas.iloc[0]) / 2
 
 Year2End = 365 *2 - 14
 QuentinEnd = 365 * 2 - 29
 AnderStart = 365 * 2 - 14
-consumptionTot_El_Y2 = (df.Counter_El[Year2End] - df.Counter_El[Year1End+1])
-consumptionTot_Gas_Y2 = (df.Counter_Gas[Year2End] - df.Counter_Gas[Year1End+1])
+consumptionTot_El_Y2 = (df.Counter_El.iloc[Year2End] - df.Counter_El.iloc[Year1End+1])
+consumptionTot_Gas_Y2 = (df.Counter_Gas.iloc[Year2End] - df.Counter_Gas.iloc[Year1End+1])
 
-consumptionAnder_El = (df.Counter_El[Year2End] - df.Counter_El[AnderStart]) / 2
-consumptionAnder_Gas = (df.Counter_Gas[Year2End] - df.Counter_Gas[AnderStart]) / 2
-consumptionQuentin_El_Y2 = (df.Counter_El[QuentinEnd] - df.Counter_El[Year1End+1]) / 2
-consumptionQuentin_Gas_Y2 = (df.Counter_Gas[QuentinEnd] - df.Counter_Gas[Year1End+1]) / 2
-consumptionAli_El_Y2 = (df.Counter_El[AnderStart] - df.Counter_El[QuentinEnd]) / 2 + (df.Counter_El[Year2End] - df.Counter_El[Year1End + 1]) / 2
-consumptionAli_Gas_Y2 = (df.Counter_Gas[AnderStart] - df.Counter_Gas[QuentinEnd]) / 2 + (df.Counter_Gas[Year2End] - df.Counter_Gas[Year1End + 1]) / 2
+consumptionAnder_El = (df.Counter_El.iloc[Year2End] - df.Counter_El.iloc[AnderStart]) / 2
+consumptionAnder_Gas = (df.Counter_Gas.iloc[Year2End] - df.Counter_Gas.iloc[AnderStart]) / 2
+consumptionQuentin_El_Y2 = (df.Counter_El.iloc[QuentinEnd] - df.Counter_El.iloc[Year1End+1]) / 2
+consumptionQuentin_Gas_Y2 = (df.Counter_Gas.iloc[QuentinEnd] - df.Counter_Gas.iloc[Year1End+1]) / 2
+consumptionAli_El_Y2 = (df.Counter_El.iloc[AnderStart] - df.Counter_El.iloc[QuentinEnd]) / 2 + (df.Counter_El.iloc[Year2End] - df.Counter_El.iloc[Year1End + 1]) / 2
+consumptionAli_Gas_Y2 = (df.Counter_Gas.iloc[AnderStart] - df.Counter_Gas.iloc[QuentinEnd]) / 2 + (df.Counter_Gas.iloc[Year2End] - df.Counter_Gas.iloc[Year1End + 1]) / 2
 
 
 # Specify the Column Names while initializing the Table
@@ -155,10 +155,10 @@ plt.legend()
 fig = plt.figure()
 plt.title('Moving Average Energy Consumption per Day in kWh (Rolling Year)')
 # plt.plot(index_Y1, dE_EL_kWh_MA_Y1, label='Electricity (Y1)')
-plt.plot(df.Day[0:364], df.dE_EL_kWh_MA[0:364], 'm', label='Electricity (Y1)')
-plt.plot(df.Day[365:-1] - df.Day[365], df.dE_EL_kWh_MA[365:-1], 'r', label='Electricity (Y2)')
-plt.plot(df.Day[0:364], df.dE_Gas_kWh_MA[0:364], 'c', label='Gas (Y1)')
-plt.plot(df.Day[365:-1] - df.Day[365], df.dE_Gas_kWh_MA[365:-1], 'b', label='Gas (Y2)')
+plt.plot(df.Day.iloc[0:364], df.dE_EL_kWh_MA.iloc[0:364], 'm', label='Electricity (Y1)')
+plt.plot(df.Day.iloc[365:-1] - df.Day.iloc[365], df.dE_EL_kWh_MA.iloc[365:-1], 'r', label='Electricity (Y2)')
+plt.plot(df.Day.iloc[0:364], df.dE_Gas_kWh_MA.iloc[0:364], 'c', label='Gas (Y1)')
+plt.plot(df.Day.iloc[365:-1] - df.Day.iloc[365], df.dE_Gas_kWh_MA.iloc[365:-1], 'b', label='Gas (Y2)')
 plt.ylabel('Energy [kWh/d]')
 plt.xlabel('Date')
 plt.xticks(rotation=45)
@@ -168,10 +168,10 @@ plt.legend()
 fig = plt.figure()
 plt.title('TEnergy Consumption in kWh (Rolling Year)')
 # plt.plot(index_Y1, dE_EL_kWh_MA_Y1, label='Electricity (Y1)')
-plt.plot(df.Day[0:364], df.Counter_El[0:364] - df.Counter_El[0], 'm', label='Electricity (Y1)')
-plt.plot(df.Day[365:-1] - df.Day[365], df.Counter_El[365:-1] - df.Counter_El[365], 'r', label='Electricity (Y2)')
-plt.plot(df.Day[0:364], (df.Counter_Gas[0:364] - df.Counter_Gas[0]) * 10.55, 'c', label='Gas (Y1)')
-plt.plot(df.Day[365:-1] - df.Day[365], (df.Counter_Gas[365:-1] - df.Counter_Gas[365]) * 10.55, 'b', label='Gas (Y2)')
+plt.plot(df.Day.iloc[0:364], df.Counter_El.iloc[0:364] - df.Counter_El.iloc[0], 'm', label='Electricity (Y1)')
+plt.plot(df.Day.iloc[365:-1] - df.Day.iloc[365], df.Counter_El.iloc[365:-1] - df.Counter_El.iloc[365], 'r', label='Electricity (Y2)')
+plt.plot(df.Day.iloc[0:364], (df.Counter_Gas.iloc[0:364] - df.Counter_Gas.iloc[0]) * 10.55, 'c', label='Gas (Y1)')
+plt.plot(df.Day.iloc[365:-1] - df.Day.iloc[365], (df.Counter_Gas.iloc[365:-1] - df.Counter_Gas.iloc[365]) * 10.55, 'b', label='Gas (Y2)')
 plt.ylabel('Energy [kWh]')
 plt.xlabel('Date')
 plt.xticks(rotation=45)
