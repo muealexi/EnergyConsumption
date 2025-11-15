@@ -131,25 +131,27 @@ def plot_rolling_year(df, year_ends, mode='ma'):
 def total_comparison_table(year_labels, consumption_total_el, consumption_total_gas, costs_total_el, costs_total_gas, df, year_ends):
     print("Total Consumption Comparison over the Years")
 
-    table = PrettyTable(["What"] + year_labels)
-    # Electricity [kWh]
-    table.add_row(["Electricity [kWh]"] + [round(val, 2) for val in consumption_total_el])
-    # Gas [kWh]
-    table.add_row(["Gas [kWh]"] + [round(val, 2) for val in consumption_total_gas])
-    # Electricity [EUR]
-    table.add_row(["Electricity [EUR]"] + [round(val, 2) for val in costs_total_el])
-    # Gas [EUR]
-    table.add_row(["Gas [EUR]"] + [round(val, 2) for val in costs_total_gas])
-    # Electricity [EUR/kWh]
-    table.add_row(["Electricity [EUR/kWh]"] + [round(costs_total_el[i] / consumption_total_el[i], 2) if consumption_total_el[i] else 0 for i in range(len(year_labels))])
-    # Gas [EUR/kWh]
-    table.add_row(["Gas [EUR/kWh]"] + [round(costs_total_gas[i] / consumption_total_gas[i], 2) if consumption_total_gas[i] else 0 for i in range(len(year_labels))])
+    table = PrettyTable(["What", "Unit"] + year_labels)
+    # Electricity (kWh)
+    table.add_row(["Electricity", "kWh"] + [round(val, 2) for val in consumption_total_el])
+    # Gas (kWh)
+    table.add_row(["Gas", "kWh"] + [round(val, 2) for val in consumption_total_gas])
+    # Electricity (EUR)
+    table.add_row(["Electricity", "EUR"] + [round(val, 2) for val in costs_total_el])
+    # Gas (EUR)
+    table.add_row(["Gas", "EUR"] + [round(val, 2) for val in costs_total_gas])
+    # Electricity (EUR/kWh)
+    table.add_row(["Electricity", "EUR/kWh"] + [round(costs_total_el[i] / consumption_total_el[i], 2) if consumption_total_el[i] else 0 for i in range(len(year_labels))])
+    # Gas (EUR/kWh)
+    table.add_row(["Gas", "EUR/kWh"] + [round(costs_total_gas[i] / consumption_total_gas[i], 2) if consumption_total_gas[i] else 0 for i in range(len(year_labels))])
+    # Total Costs (EUR)
+    table.add_row(["Total Costs", "EUR"] + [round(costs_total_el[i] + costs_total_gas[i], 2) for i in range(len(year_labels))])
     # From
     from_dates = [df.index[0].date()] + [df.index[year_ends[i-1]+1].date() for i in range(1, len(year_labels))]
-    table.add_row(["From"] + from_dates)
+    table.add_row(["From", "yyyy-mm-dd"] + from_dates)
     # To
     to_dates = [df.index[year_ends[i]].date() for i in range(len(year_labels))]
-    table.add_row(["To"] + to_dates)
+    table.add_row(["To", "yyyy-mm-dd"] + to_dates)
     print(table)
 
 # Load data
@@ -213,8 +215,8 @@ costsTot_Gas_Y1 = 621.14  / (621.14 + 780.99) * 1356.80
 costsTot_El_Y1 = 780.99 / (621.14 + 780.99) * 1356.80
 costsTot_Gas_Y2 = 210.60 / (210.60 + 421.98) * 662.20
 costsTot_El_Y2 = 421.98 / (210.60 + 421.98) * 662.20
-costsTot_Gas_Y3 = 500 / (300 + 500) * 900
-costsTot_El_Y3 = 500 / (300 + 500) * 900
+costsTot_Gas_Y3 = 323.23 / (323.23 + 483.43) * 951.46
+costsTot_El_Y3 = 483.43 / (323.23 + 483.43) * 951.46
 # speculation:
 
 costs_total_el = [costsTot_El_Y1, costsTot_El_Y2, costsTot_El_Y3]
@@ -224,10 +226,6 @@ consumption_total_gas = [consumption_y1["GAS"][-1], consumption_y2["GAS"][-1], c
 
 year_labels = [f"Year {i+1}" for i in range(len(costs_total_el))]
 total_comparison_table(year_labels, consumption_total_el[:len(costs_total_el)], consumption_total_gas[:len(costs_total_gas)], costs_total_el[:len(costs_total_el)], costs_total_gas[:len(costs_total_gas)], df, year_ends)
-
-print("Cost Electricity: ", consumption_y1["EL"][-1] * 0.49)
-print("Cost Gas: ", consumption_y1["GAS"][-1] * 0.33)
-print("Total Costs:", consumption_y1["EL"][-1] * 0.49 + consumption_y1["GAS"][-1] * 0.33)
 
 ##################### Plots #####################
 
