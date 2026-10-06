@@ -53,10 +53,12 @@ def preprocess_data(df):
 def consumption_dict_to_list(consumptions):
     consumption_dict = {}
     consumption_dict["Name"] = [c[0] for c in consumptions]
-    consumption_dict["EL"] = [(df.Counter_El_kWh.iloc[c[2]] - df.Counter_El_kWh.iloc[c[1]]) * c[3] for c in consumptions]
-    consumption_dict["GAS"] = [(df.Counter_Gas_kWh.iloc[c[2]] - df.Counter_Gas_kWh.iloc[c[1]]) * c[3] for c in consumptions]
-    consumption_dict["start"] = [c[1] for c in consumptions]
-    consumption_dict["end"] = [c[2] for c in consumptions]
+    # Entry: [name, start, end, share, *extra (start, end, share) periods]
+    periods = [[tuple(c[1:4])] + list(c[4:]) for c in consumptions]
+    consumption_dict["EL"] = [sum((df.Counter_El_kWh.iloc[e] - df.Counter_El_kWh.iloc[s]) * f for s, e, f in p) for p in periods]
+    consumption_dict["GAS"] = [sum((df.Counter_Gas_kWh.iloc[e] - df.Counter_Gas_kWh.iloc[s]) * f for s, e, f in p) for p in periods]
+    consumption_dict["start"] = [p[0][0] for p in periods]
+    consumption_dict["end"] = [p[-1][1] for p in periods]
     return consumption_dict
 
 # Print consumption table
@@ -200,12 +202,15 @@ consumption_y3 = consumption_dict_to_list([consumption_ander_y3, consumption_ali
 consumption_table("Year 3", consumption_y3)
 
 ##################### 2025-2026 #####################
+InesStart = df.index.get_loc(pd.Timestamp('2026-07-01'))
 
-consumption_ander_y4 = ["Ander", year_ends[2]+1, last_day, 0.5]
-consumption_ali_y4 = ["Alexis", year_ends[2]+1, last_day, 0.5]
+# 3 people from 1st of July 2026
+consumption_ander_y4 = ["Ander", year_ends[2]+1, InesStart, 0.5, (InesStart, last_day, 1/3)]
+consumption_ines_y4 = ["Ines", InesStart, last_day, 1/3]
+consumption_ali_y4 = ["Alexis", year_ends[2]+1, InesStart, 0.5, (InesStart, last_day, 1/3)]
 consumption_tot_y4 = ["Total", year_ends[2]+1, last_day, 1.0]
 
-consumption_y4 = consumption_dict_to_list([consumption_ander_y4, consumption_ali_y4, consumption_tot_y4])
+consumption_y4 = consumption_dict_to_list([consumption_ander_y4, consumption_ines_y4, consumption_ali_y4, consumption_tot_y4])
 
 consumption_table("Year 4", consumption_y4)
 
@@ -235,6 +240,7 @@ plt.plot(df.index, df.dE_EL_kWh_MA, label='Electricity')
 plt.plot(df.index, df.dE_Gas_kWh_MA, label='Gas')
 plt.axvline(datetime.datetime(2023, 7, 15), color = 'r', label = 'Ari -> Quentin')
 plt.axvline(datetime.datetime(2024, 9, 1), color = 'r', label = 'Quentin -> Ander')
+plt.axvline(datetime.datetime(2026, 7, 1), color = 'r', label = '+ Ines')
 plt.ylabel('Energy [kWh/d]')
 plt.xlabel('Date')
 plt.xticks(rotation=45)
