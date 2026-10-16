@@ -162,7 +162,11 @@ df = preprocess_data(df)
 
 # Consumption per User
 last_day = round(df.Day.iloc[-1])
-year_ends = [365 + 2, 365 * 2 + 3, 365 * 3 + 3, last_day]  # End of Year 1, Year 2, Year 3
+Y1End = df.index.get_loc(pd.Timestamp('2023-10-02'))
+Y2End = df.index.get_loc(pd.Timestamp('2024-10-02'))
+Y3End = df.index.get_loc(pd.Timestamp('2025-10-02'))
+Y4End = df.index.get_loc(pd.Timestamp('2026-10-02'))
+year_ends = [Y1End, Y2End, Y3End, Y4End, last_day]  # last_day = Year 5 so far
 print("Year ends at indices: ", year_ends)
 plot_rolling_year(df, year_ends, mode='ma')
 plot_rolling_year(df, year_ends, mode='cumulative')
@@ -205,14 +209,28 @@ consumption_table("Year 3", consumption_y3)
 InesStart = df.index.get_loc(pd.Timestamp('2026-07-01'))
 
 # 3 people from 1st of July 2026
-consumption_ander_y4 = ["Ander", year_ends[2]+1, InesStart, 0.5, (InesStart, last_day, 1/3)]
-consumption_ines_y4 = ["Ines", InesStart, last_day, 1/3]
-consumption_ali_y4 = ["Alexis", year_ends[2]+1, InesStart, 0.5, (InesStart, last_day, 1/3)]
-consumption_tot_y4 = ["Total", year_ends[2]+1, last_day, 1.0]
+consumption_ander_y4 = ["Ander", year_ends[2]+1, InesStart, 0.5, (InesStart, year_ends[3], 1/3)]
+consumption_ines_y4 = ["Ines", InesStart, year_ends[3], 1/3]
+consumption_ali_y4 = ["Alexis", year_ends[2]+1, InesStart, 0.5, (InesStart, year_ends[3], 1/3)]
+consumption_tot_y4 = ["Total", year_ends[2]+1, year_ends[3], 1.0]
 
 consumption_y4 = consumption_dict_to_list([consumption_ander_y4, consumption_ines_y4, consumption_ali_y4, consumption_tot_y4])
 
 consumption_table("Year 4", consumption_y4)
+
+##################### 2026-2027 #####################
+# Ander lives here until end of October 2026, then only Ines and Alexis (1/2 each).
+# Clamped to last_day while the data doesn't reach 1st of November yet.
+AnderEnd = min(df.index.searchsorted(pd.Timestamp('2026-11-01')), last_day)
+
+consumption_ander_y5 = ["Ander", year_ends[3]+1, AnderEnd, 1/3]
+consumption_ines_y5 = ["Ines", year_ends[3]+1, AnderEnd, 1/3, (AnderEnd, last_day, 0.5)]
+consumption_ali_y5 = ["Alexis", year_ends[3]+1, AnderEnd, 1/3, (AnderEnd, last_day, 0.5)]
+consumption_tot_y5 = ["Total", year_ends[3]+1, last_day, 1.0]
+
+consumption_y5 = consumption_dict_to_list([consumption_ander_y5, consumption_ines_y5, consumption_ali_y5, consumption_tot_y5])
+
+consumption_table("Year 5", consumption_y5)
 
 ##################### Total Comparison #####################
 
@@ -241,6 +259,7 @@ plt.plot(df.index, df.dE_Gas_kWh_MA, label='Gas')
 plt.axvline(datetime.datetime(2023, 7, 15), color = 'r', label = 'Ari -> Quentin')
 plt.axvline(datetime.datetime(2024, 9, 1), color = 'r', label = 'Quentin -> Ander')
 plt.axvline(datetime.datetime(2026, 7, 1), color = 'r', label = '+ Ines')
+plt.axvline(datetime.datetime(2026, 11, 1), color = 'r', label = '- Ander')
 plt.ylabel('Energy [kWh/d]')
 plt.xlabel('Date')
 plt.xticks(rotation=45)
