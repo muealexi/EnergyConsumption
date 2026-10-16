@@ -6,6 +6,8 @@ import datetime
 
 # Constants
 GAS_TO_KWH = 10.9  # Conversion factor from cubic meters of gas to kWh
+VAT = 1.2  # Bills.csv: fixed part is net, total is gross
+ENERGIES = {"EL": "electricity", "GAS": "gas"}  # Keys in the consumption dict -> Bills.csv
 
 # Function to convert m3 of gas to kWh
 def convert_m3_to_kWh(m3):
@@ -31,7 +33,7 @@ def preprocess_data(df):
     df['Day'] = (days - days[0]) / 86400000000000
 
     # Convert gas to kWh
-    df.Counter_Gas_kWh = convert_m3_to_kWh(df.Counter_Gas_m3)
+    df['Counter_Gas_kWh'] = convert_m3_to_kWh(df.Counter_Gas_m3)
 
     # Calculate differences
     df['dE_EL_kWh'] = df.Counter_El_kWh.diff(periods=1)
@@ -49,20 +51,46 @@ def preprocess_data(df):
 
     return df
 
+
 # Convert consumption definitions to a dictionary
-def consumption_dict_to_list(consumptions):
+def consumption_dict_to_list(df, consumptions):
     consumption_dict = {}
     consumption_dict["Name"] = [c[0] for c in consumptions]
     # Entry: [name, start, end, share, *extra (start, end, share) periods]
     periods = [[tuple(c[1:4])] + list(c[4:]) for c in consumptions]
     consumption_dict["EL"] = [sum((df.Counter_El_kWh.iloc[e] - df.Counter_El_kWh.iloc[s]) * f for s, e, f in p) for p in periods]
     consumption_dict["GAS"] = [sum((df.Counter_Gas_kWh.iloc[e] - df.Counter_Gas_kWh.iloc[s]) * f for s, e, f in p) for p in periods]
+    consumption_dict["DAYS"] = [sum((e - s) * f for s, e, f in p) for p in periods]
     consumption_dict["start"] = [p[0][0] for p in periods]
     consumption_dict["end"] = [p[-1][1] for p in periods]
     return consumption_dict
 
+# Split each bill: fixed part by days present x share, variable part by kWh.
+# Without a bill yet, estimate from the latest bill: its fixed rates at the end of the
+# period, and its average price per kWh without the one-off electricity subsidy.
+def add_costs(consumption_dict, bills, year):
+    rows = bills[bills.year == year]
+    consumption_dict["estimate"] = rows.empty
+    if rows.empty:
+        rows = bills[bills.year == bills.year.max()]
+    consumption_dict["bill_year"] = rows.year.iloc[0]
+    for key, energy in ENERGIES.items():
+        r = rows[rows.energy == energy].iloc[0]
+        fixed = r.fixed_net_eur * VAT
+        variable = r.total_eur - fixed
+        if consumption_dict["estimate"]:
+            # ponytail: last bill's prices carried forward, the real bill replaces this
+            calendar_days = consumption_dict["DAYS"][-1] + 1  # DAYS counts intervals, first day included
+            fixed = r.fixed_rate_net_eur_per_year * VAT * calendar_days / 365
+            variable = (variable - r.subsidy_eur) / r.kwh * consumption_dict[key][-1]
+        # Normalised over the people, so gaps (e.g. an empty room) are still fully paid
+        days, kwh = consumption_dict["DAYS"][:-1], consumption_dict[key][:-1]
+        eur = [fixed * d / (sum(days) or 1) + variable * k / (sum(kwh) or 1) for d, k in zip(days, kwh)]
+        assert abs(sum(eur) - fixed - variable) < 0.01, "people's shares must add up to the bill"
+        consumption_dict["EUR_" + key] = eur + [fixed + variable]
+
 # Print consumption table
-def consumption_table(title, consumption_dict):
+def consumption_table(title, consumption_dict, df):
     # Specify the Column Names while initializing the Table
     print(title, ": From ", df.index[consumption_dict["start"][-1]], " to ", df.index[consumption_dict["end"][-1]])
 
@@ -81,12 +109,17 @@ def consumption_table(title, consumption_dict):
     table.add_row(
         ["Gas [%]"] + [round(val / gas_total, 2) * 100 if gas_total else 0 for val in consumption_dict["GAS"][:-1]] + [round(sum(consumption_dict["GAS"][:-1]) / gas_total, 2) * 100 if gas_total else 0]
     )
+    # Costs [EUR]
+    est = f" (est. Y{consumption_dict['bill_year']} prices)" if consumption_dict["estimate"] else ""
+    table.add_row([f"Electricity [EUR]{est}"] + [round(val, 2) for val in consumption_dict["EUR_EL"]])
+    table.add_row([f"Gas [EUR]{est}"] + [round(val, 2) for val in consumption_dict["EUR_GAS"]])
+    table.add_row([f"Total [EUR]{est}"] + [round(a + b, 2) for a, b in zip(consumption_dict["EUR_EL"], consumption_dict["EUR_GAS"])])
     # From
     table.add_row(["From"] + [df.index[start].date() for start in consumption_dict["start"]])
     # To
     table.add_row(["To"] + [df.index[end].date() for end in consumption_dict["end"]])
     print(table)
-  
+
 def plot_rolling_year(df, year_ends, mode='ma'):
     """
     Extensible rolling year plot.
@@ -130,142 +163,119 @@ def plot_rolling_year(df, year_ends, mode='ma'):
     plt.legend()
     plt.tight_layout()
 
-def total_comparison_table(year_labels, consumption_total_el, consumption_total_gas, costs_total_el, costs_total_gas, df, year_ends):
-    print("Total Consumption Comparison over the Years")
+def total_comparison_table(results, df):
+    print("Total Consumption Comparison over the Years (est. = no bill yet)")
+    labels = [f"Year {i+1}" + (" (est.)" if c["estimate"] else "") for i, c in enumerate(results)]
+    el = [c["EL"][-1] for c in results]
+    gas = [c["GAS"][-1] for c in results]
+    eur_el = [c["EUR_EL"][-1] for c in results]
+    eur_gas = [c["EUR_GAS"][-1] for c in results]
 
-    table = PrettyTable(["What", "Unit"] + year_labels)
-    # Electricity (kWh)
-    table.add_row(["Electricity", "kWh"] + [round(val, 2) for val in consumption_total_el])
-    # Gas (kWh)
-    table.add_row(["Gas", "kWh"] + [round(val, 2) for val in consumption_total_gas])
-    # Electricity (EUR)
-    table.add_row(["Electricity", "EUR"] + [round(val, 2) for val in costs_total_el])
-    # Gas (EUR)
-    table.add_row(["Gas", "EUR"] + [round(val, 2) for val in costs_total_gas])
-    # Electricity (EUR/kWh)
-    table.add_row(["Electricity", "EUR/kWh"] + [round(costs_total_el[i] / consumption_total_el[i], 2) if consumption_total_el[i] else 0 for i in range(len(year_labels))])
-    # Gas (EUR/kWh)
-    table.add_row(["Gas", "EUR/kWh"] + [round(costs_total_gas[i] / consumption_total_gas[i], 2) if consumption_total_gas[i] else 0 for i in range(len(year_labels))])
-    # Total Costs (EUR)
-    table.add_row(["Total Costs", "EUR"] + [round(costs_total_el[i] + costs_total_gas[i], 2) for i in range(len(year_labels))])
-    # From
-    from_dates = [df.index[0].date()] + [df.index[year_ends[i-1]+1].date() for i in range(1, len(year_labels))]
-    table.add_row(["From", "yyyy-mm-dd"] + from_dates)
-    # To
-    to_dates = [df.index[year_ends[i]].date() for i in range(len(year_labels))]
-    table.add_row(["To", "yyyy-mm-dd"] + to_dates)
+    table = PrettyTable(["What", "Unit"] + labels)
+    table.add_row(["Electricity", "kWh"] + [round(val, 2) for val in el])
+    table.add_row(["Gas", "kWh"] + [round(val, 2) for val in gas])
+    table.add_row(["Electricity", "EUR"] + [round(val, 2) for val in eur_el])
+    table.add_row(["Gas", "EUR"] + [round(val, 2) for val in eur_gas])
+    table.add_row(["Electricity", "EUR/kWh"] + [round(e / k, 2) if k else 0 for e, k in zip(eur_el, el)])
+    table.add_row(["Gas", "EUR/kWh"] + [round(e / k, 2) if k else 0 for e, k in zip(eur_gas, gas)])
+    table.add_row(["Total Costs", "EUR"] + [round(a + b, 2) for a, b in zip(eur_el, eur_gas)])
+    table.add_row(["From", "yyyy-mm-dd"] + [df.index[c["start"][-1]].date() for c in results])
+    table.add_row(["To", "yyyy-mm-dd"] + [df.index[c["end"][-1]].date() for c in results])
     print(table)
 
-# Load data
-df = pd.read_csv('EnergyCounter.csv')
-df = preprocess_data(df)
+def plot_timeline(df):
+    plt.figure()
+    plt.title('Moving Average Energy Consumption per Day in kWh')
+    plt.plot(df.index, df.dE_EL_kWh_MA, label='Electricity')
+    plt.plot(df.index, df.dE_Gas_kWh_MA, label='Gas')
+    plt.axvline(datetime.datetime(2023, 7, 15), color = 'r', label = 'Ari -> Quentin')
+    plt.axvline(datetime.datetime(2024, 9, 1), color = 'r', label = 'Quentin -> Ander')
+    plt.axvline(datetime.datetime(2026, 7, 1), color = 'r', label = '+ Ines')
+    plt.axvline(datetime.datetime(2026, 11, 1), color = 'r', label = '- Ander')
+    plt.ylabel('Energy [kWh/d]')
+    plt.xlabel('Date')
+    plt.xticks(rotation=45)
+    plt.grid()
+    plt.legend()
 
-# Consumption per User
-last_day = round(df.Day.iloc[-1])
-Y1End = df.index.get_loc(pd.Timestamp('2023-10-02'))
-Y2End = df.index.get_loc(pd.Timestamp('2024-10-02'))
-Y3End = df.index.get_loc(pd.Timestamp('2025-10-02'))
-Y4End = df.index.get_loc(pd.Timestamp('2026-10-02'))
-year_ends = [Y1End, Y2End, Y3End, Y4End, last_day]  # last_day = Year 5 so far
-print("Year ends at indices: ", year_ends)
-plot_rolling_year(df, year_ends, mode='ma')
-plot_rolling_year(df, year_ends, mode='cumulative')
+# Year boundaries and who lived here when, with which share
+def define_years(df):
+    last_day = round(df.Day.iloc[-1])
+    Y1End = df.index.get_loc(pd.Timestamp('2023-10-02'))
+    Y2End = df.index.get_loc(pd.Timestamp('2024-10-02'))
+    Y3End = df.index.get_loc(pd.Timestamp('2025-10-02'))
+    Y4End = df.index.get_loc(pd.Timestamp('2026-10-02'))
+    year_ends = [Y1End, Y2End, Y3End, Y4End, last_day]  # last_day = Year 5 so far
 
-##################### 2022-2023 #####################
-AriEnd = 287
+    ##################### 2022-2023 #####################
+    AriEnd = 287
+    y1 = [
+        ["Ari", 0, AriEnd, 0.5],
+        ["Quentin", AriEnd + 1, Y1End, 0.5],
+        ["Alexis", 0, Y1End, 0.5],
+        ["Total", 0, Y1End, 1.0],
+    ]
 
-consumption_ari_y1 = ["Ari", 0, AriEnd, 0.5]
-consumption_quentin_y1 = ["Quentin", AriEnd + 1, year_ends[0], 0.5]
-consumption_ali_y1 = ["Alexis", 0, year_ends[0], 0.5]
-consumption_tot_y1 = ["Total", 0, year_ends[0], 1.0]
+    ##################### 2023-2024 #####################
+    QuentinEnd = 365 * 2 - 29
+    AnderStart = 365 * 2 - 14
+    y2 = [
+        ["Quentin", Y1End+1, QuentinEnd, 0.5],
+        ["Ander", AnderStart, Y2End, 0.5],
+        ["Alexis", Y1End+1, Y2End, 0.5],
+        ["Total", Y1End+1, Y2End, 1.0],
+    ]
 
-consumption_y1 = consumption_dict_to_list([consumption_ari_y1, consumption_quentin_y1, consumption_ali_y1, consumption_tot_y1])
+    ##################### 2024-2025 #####################
+    y3 = [
+        ["Ander", Y2End+1, Y3End, 0.5],
+        ["Alexis", Y2End+1, Y3End, 0.5],
+        ["Total", Y2End+1, Y3End, 1.0],
+    ]
 
-consumption_table("Year 1", consumption_y1)
+    ##################### 2025-2026 #####################
+    # 3 people from 1st of July 2026
+    InesStart = df.index.get_loc(pd.Timestamp('2026-07-01'))
+    y4 = [
+        ["Ander", Y3End+1, InesStart, 0.5, (InesStart, Y4End, 1/3)],
+        ["Ines", InesStart, Y4End, 1/3],
+        ["Alexis", Y3End+1, InesStart, 0.5, (InesStart, Y4End, 1/3)],
+        ["Total", Y3End+1, Y4End, 1.0],
+    ]
 
-##################### 2023-2024 #####################
-QuentinEnd = 365 * 2 - 29
-AnderStart = 365 * 2 - 14
+    ##################### 2026-2027 #####################
+    # Ander lives here until end of October 2026, then only Ines and Alexis (1/2 each).
+    # Clamped to last_day while the data doesn't reach 1st of November yet.
+    AnderEnd = min(df.index.searchsorted(pd.Timestamp('2026-11-01')), last_day)
+    y5 = [
+        ["Ander", Y4End+1, AnderEnd, 1/3],
+        ["Ines", Y4End+1, AnderEnd, 1/3, (AnderEnd, last_day, 0.5)],
+        ["Alexis", Y4End+1, AnderEnd, 1/3, (AnderEnd, last_day, 0.5)],
+        ["Total", Y4End+1, last_day, 1.0],
+    ]
 
-consumption_quentin_y2 = ["Quentin", year_ends[0]+1, QuentinEnd, 0.5]
-consumption_ander_y2 = ["Ander", AnderStart, year_ends[1], 0.5]
-consumption_ali_y2 = ["Alexis", year_ends[0]+1, year_ends[1], 0.5]
-consumption_tot_y2 = ["Total", year_ends[0]+1, year_ends[1], 1.0]
+    return year_ends, [y1, y2, y3, y4, y5]
 
-consumption_y2 = consumption_dict_to_list([consumption_quentin_y2, consumption_ander_y2, consumption_ali_y2, consumption_tot_y2])
+# Load data and compute consumption and costs per person for every year
+def compute():
+    df = preprocess_data(pd.read_csv('EnergyCounter.csv'))
+    bills = pd.read_csv('Bills.csv', parse_dates=['from', 'to'])
+    year_ends, years = define_years(df)
+    results = []
+    for i, entries in enumerate(years, start=1):
+        consumption_dict = consumption_dict_to_list(df, entries)
+        add_costs(consumption_dict, bills, i)
+        results.append(consumption_dict)
+    return df, year_ends, results
 
-consumption_table("Year 2", consumption_y2)
+if __name__ == '__main__':
+    df, year_ends, results = compute()
+    print("Year ends at indices: ", year_ends)
+    for i, consumption_dict in enumerate(results, start=1):
+        consumption_table(f"Year {i}", consumption_dict, df)
+    total_comparison_table(results, df)
 
-##################### 2024-2025 #####################
-consumption_ander_y3 = ["Ander", year_ends[1]+1, year_ends[2], 0.5]
-consumption_ali_y3 = ["Alexis", year_ends[1]+1, year_ends[2], 0.5]
-consumption_tot_y3 = ["Total", year_ends[1]+1, year_ends[2], 1.0]
-
-consumption_y3 = consumption_dict_to_list([consumption_ander_y3, consumption_ali_y3, consumption_tot_y3])
-
-consumption_table("Year 3", consumption_y3)
-
-##################### 2025-2026 #####################
-InesStart = df.index.get_loc(pd.Timestamp('2026-07-01'))
-
-# 3 people from 1st of July 2026
-consumption_ander_y4 = ["Ander", year_ends[2]+1, InesStart, 0.5, (InesStart, year_ends[3], 1/3)]
-consumption_ines_y4 = ["Ines", InesStart, year_ends[3], 1/3]
-consumption_ali_y4 = ["Alexis", year_ends[2]+1, InesStart, 0.5, (InesStart, year_ends[3], 1/3)]
-consumption_tot_y4 = ["Total", year_ends[2]+1, year_ends[3], 1.0]
-
-consumption_y4 = consumption_dict_to_list([consumption_ander_y4, consumption_ines_y4, consumption_ali_y4, consumption_tot_y4])
-
-consumption_table("Year 4", consumption_y4)
-
-##################### 2026-2027 #####################
-# Ander lives here until end of October 2026, then only Ines and Alexis (1/2 each).
-# Clamped to last_day while the data doesn't reach 1st of November yet.
-AnderEnd = min(df.index.searchsorted(pd.Timestamp('2026-11-01')), last_day)
-
-consumption_ander_y5 = ["Ander", year_ends[3]+1, AnderEnd, 1/3]
-consumption_ines_y5 = ["Ines", year_ends[3]+1, AnderEnd, 1/3, (AnderEnd, last_day, 0.5)]
-consumption_ali_y5 = ["Alexis", year_ends[3]+1, AnderEnd, 1/3, (AnderEnd, last_day, 0.5)]
-consumption_tot_y5 = ["Total", year_ends[3]+1, last_day, 1.0]
-
-consumption_y5 = consumption_dict_to_list([consumption_ander_y5, consumption_ines_y5, consumption_ali_y5, consumption_tot_y5])
-
-consumption_table("Year 5", consumption_y5)
-
-##################### Total Comparison #####################
-
-costsTot_Gas_Y1 = 621.14  / (621.14 + 780.99) * 1356.80
-costsTot_El_Y1 = 780.99 / (621.14 + 780.99) * 1356.80
-costsTot_Gas_Y2 = 210.60 / (210.60 + 421.98) * 662.20
-costsTot_El_Y2 = 421.98 / (210.60 + 421.98) * 662.20
-costsTot_Gas_Y3 = 323.23 / (323.23 + 483.43) * 951.46
-costsTot_El_Y3 = 483.43 / (323.23 + 483.43) * 951.46
-# speculation:
-
-costs_total_el = [costsTot_El_Y1, costsTot_El_Y2, costsTot_El_Y3]
-costs_total_gas = [costsTot_Gas_Y1, costsTot_Gas_Y2, costsTot_Gas_Y3]
-consumption_total_el = [consumption_y1["EL"][-1], consumption_y2["EL"][-1], consumption_y3["EL"][-1]]
-consumption_total_gas = [consumption_y1["GAS"][-1], consumption_y2["GAS"][-1], consumption_y3["GAS"][-1]]
-
-year_labels = [f"Year {i+1}" for i in range(len(costs_total_el))]
-total_comparison_table(year_labels, consumption_total_el[:len(costs_total_el)], consumption_total_gas[:len(costs_total_gas)], costs_total_el[:len(costs_total_el)], costs_total_gas[:len(costs_total_gas)], df, year_ends)
-
-##################### Plots #####################
-
-fig = plt.figure()
-plt.title('Moving Average Energy Consumption per Day in kWh')
-plt.plot(df.index, df.dE_EL_kWh_MA, label='Electricity')
-plt.plot(df.index, df.dE_Gas_kWh_MA, label='Gas')
-plt.axvline(datetime.datetime(2023, 7, 15), color = 'r', label = 'Ari -> Quentin')
-plt.axvline(datetime.datetime(2024, 9, 1), color = 'r', label = 'Quentin -> Ander')
-plt.axvline(datetime.datetime(2026, 7, 1), color = 'r', label = '+ Ines')
-plt.axvline(datetime.datetime(2026, 11, 1), color = 'r', label = '- Ander')
-plt.ylabel('Energy [kWh/d]')
-plt.xlabel('Date')
-plt.xticks(rotation=45)
-plt.grid()
-plt.legend()
-
-plt.show()
-
-
+    plot_rolling_year(df, year_ends, mode='ma')
+    plot_rolling_year(df, year_ends, mode='cumulative')
+    plot_timeline(df)
+    plt.show()
