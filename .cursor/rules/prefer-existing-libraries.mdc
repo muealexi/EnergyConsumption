@@ -1,0 +1,15 @@
+---
+description: Prefer existing libraries over custom implementations
+alwaysApply: true
+---
+
+# Prefer existing libraries
+
+Before implementing non-trivial functionality:
+
+1. **Search first** — Check PyPI, GitHub, and official SDKs for maintained libraries (web search when unsure).
+2. **Use libraries when they fit** — OAuth, HTTP clients, CSV/date handling, interpolation, scheduling, etc. should not be reinvented without a clear reason.
+3. **Custom code only when needed** — Write thin local wrappers when a library covers 80%+ of the work, or when adding a dependency is disproportionate.
+4. **Document choices** — Briefly note which library was chosen and why if alternatives exist.
+
+Example: use `wiener-netze-smart-meter-api` for Wiener Netze Smart Meter API access instead of building OAuth and endpoint clients from scratch.
