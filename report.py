@@ -98,13 +98,41 @@ def monthly(df, years, temp):
     return out, per_hdd
 
 
+def intervals(df, temp):
+    """Gas kWh/day and mean outdoor temperature between two real gas readings (no interpolation)."""
+    raw = pd.read_csv("EnergyCounter.csv").dropna(subset=["Counter_Gas_m3"])
+    dates = pd.to_datetime(raw.Date, format="%d/%m/%Y").drop_duplicates().tolist()
+    rows = []
+    for a, b in zip(dates, dates[1:]):
+        days = (b - a).days
+        t = temp[a:b - pd.Timedelta(days=1)]
+        if days < 3 or len(t) < days:  # too short to be meaningful, or weather missing
+            continue
+        mid = a + (b - a) / 2
+        rows.append({"from": a.strftime("%d.%m.%Y"), "to": b.strftime("%d.%m.%Y"), "days": days,
+                     "gas": round((df.Counter_Gas_kWh[b] - df.Counter_Gas_kWh[a]) / days, 2),
+                     "temp": round(t.mean(), 1), "y": mid.year - 2021 - (mid.month < 10)})
+    # Per-year line through heating intervals only: above ~14 degrees gas is just hot water
+    fits = {}
+    for y in sorted({r["y"] for r in rows}):
+        h = [r for r in rows if r["y"] == y and r["temp"] < 14]
+        if len(h) >= 8:
+            x, g = np.array([r["temp"] for r in h]), np.array([r["gas"] for r in h])
+            slope, icpt = np.polyfit(x, g, 1)
+            fits[y] = {"slope": round(slope, 2), "icpt": round(icpt, 2),
+                       "r2": round(np.corrcoef(x, g)[0, 1] ** 2, 2), "n": len(h)}
+    return rows, fits
+
+
 def chart_data(df, years, temp):
     m, per_hdd = monthly(df, years, temp)
+    iv, fits = intervals(df, temp)
     return {
         "months": [{"m": i.strftime("%Y-%m"), "y": int(r.year), "el": round(r.el, 2), "gas": round(r.gas, 2),
                     "days": int(r.days), "people": round(r.people, 2),
                     "hdd": None if pd.isna(r.hdd) else round(r.hdd)} for i, r in m.iterrows()],
         "gasPerHdd": {int(k): round(float(v), 2) for k, v in per_hdd.items()},
+        "intervals": iv, "fits": fits,
     }
 
 
@@ -198,6 +226,26 @@ new Chart(document.getElementById('perhdd'), { type: 'bar',
       tooltip: { callbacks: { label: c => `${c.parsed.y.toFixed(2)} kWh gas per degree day` } } },
     scales: { x: { grid: { display: false } }, y: { beginAtZero: true, title: { display: true, text: 'kWh per degree day' } } } } });
 
+// Gas vs outdoor temperature: one dot per interval between two readings, fit line per year
+const scatterSets = years.flatMap(y => {
+  const pts = D.intervals.filter(r => r.y === y).map(r => ({ x: r.temp, y: r.gas, r }));
+  const f = D.fits[y], sets = [{ type: 'scatter', label: label(y), year: y, data: pts, backgroundColor: color(y),
+    borderColor: css('--card'), borderWidth: 1, pointRadius: 4, pointHoverRadius: 6 }];
+  if (f) sets.push({ type: 'line', label: label(y) + ' trend', year: y, fit: true, borderColor: color(y), borderWidth: 2,
+    pointRadius: 0, data: [Math.min(...pts.map(p => p.x)), 14].map(x => ({ x, y: f.icpt + f.slope * x })) });
+  return sets;
+});
+new Chart(document.getElementById('scatter'), { type: 'scatter', data: { datasets: scatterSets },
+  options: { responsive: true, maintainAspectRatio: false,
+    scales: { x: { title: { display: true, text: 'Average outdoor temperature (°C)' } },
+              y: { min: 0, title: { display: true, text: 'Gas kWh per day' } } },
+    plugins: {
+      legend: { labels: { usePointStyle: true, boxWidth: 8, boxHeight: 8, filter: l => !l.text.endsWith('trend') },
+        onClick: (e, item, legend) => { const c = legend.chart, y = c.data.datasets[item.datasetIndex].year;
+          c.data.datasets.forEach((d, i) => { if (d.year === y) c.setDatasetVisibility(i, !c.isDatasetVisible(i)); }); c.update(); } },
+      tooltip: { filter: i => !i.dataset.fit, callbacks: { label: c => { const r = c.raw.r;
+        return `${r.from} to ${r.to}: ${r.gas} kWh/day at ${r.temp} °C`; } } } } } });
+
 function render() {
   const k = energy;
   season.data.datasets = yearLines(m => m[k]);
@@ -215,7 +263,11 @@ render();
 def main():
     df, year_ends, results = ev.compute()
     _, years_def = ev.define_years(df)
-    data = json.dumps(chart_data(df, years_def, load_weather(df.index[-1])))
+    cd = chart_data(df, years_def, load_weather(df.index[-1]))
+    data = json.dumps(cd)
+    # R squared: share of the ups and downs in gas use that temperature explains (1 = all of it)
+    fit_note = "How tightly gas follows temperature (R², 1 = perfectly): " + ", ".join(
+        f"Year {y} {f['r2']:.2f}" for y, f in cd["fits"].items()) + ". Year 1 had monthly readings only, so it is noisier."
 
     years = "".join(year_section(i, c, df) for i, c in reversed(list(enumerate(results, start=1))))
     page = f"""<!doctype html>
@@ -242,6 +294,13 @@ When a room was empty for a while, the people's kWh add up to less than the tota
   <p class="sub">Heating gas per heating degree day (Vienna, 20/12 method): how much gas the flat needs for each degree it is colder outside.
   A colder winter raises the gas bill but not this number. Lower is better. Years with fewer than six full months are left out.</p>
   <div class="chart"><canvas id="perhdd" role="img" aria-label="kWh of gas per heating degree day for each year"></canvas></div>
+</section>
+<section>
+  <h2>Gas against outdoor temperature</h2>
+  <p class="sub">Each dot is the time between two meter readings: average outdoor temperature and gas used per day. Lines show each year's trend on heating days (below 14 °C); above that, gas is mostly hot water.
+  Click a year in the legend to hide it.</p>
+  <div class="chart" style="height:360px"><canvas id="scatter" role="img" aria-label="Gas kWh per day against average outdoor temperature, dots per reading interval, coloured by year"></canvas></div>
+  <p class="note">{fit_note}</p>
 </section>
 </main>
 <script id="data" type="application/json">{data}</script>
