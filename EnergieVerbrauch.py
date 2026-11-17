@@ -29,8 +29,7 @@ def preprocess_data(df):
     df = df.interpolate(method='linear')
 
     # Add day count
-    days = pd.to_numeric(df.index)
-    df['Day'] = (days - days[0]) / 86400000000000
+    df['Day'] = (df.index - df.index[0]).days  # unit-independent (pandas 3 stores datetimes in us, not ns)
 
     # Convert gas to kWh
     df['Counter_Gas_kWh'] = convert_m3_to_kWh(df.Counter_Gas_m3)
