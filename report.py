@@ -129,8 +129,9 @@ img { max-width:100%; height:auto; background:#fff; border-radius:6px; }
 
 
 CHART_CSS = """
-:root { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --band:rgba(120,113,108,.12); }
-@media (prefers-color-scheme: dark) { :root { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --band:rgba(168,162,158,.14); } }
+/* Years: one blue ramp, oldest faint (--y1) to newest strongest (--y5) */
+:root { --y1:#86b6ef; --y2:#5598e7; --y3:#2a78d6; --y4:#1c5cab; --y5:#0d366b; --gas:#2a78d6; --el:#eb6834; --band:rgba(120,113,108,.12); }
+@media (prefers-color-scheme: dark) { :root { --y1:#184f95; --y2:#256abf; --y3:#3987e5; --y4:#6da7ec; --y5:#b7d3f6; --gas:#3987e5; --el:#d95926; --band:rgba(168,162,158,.14); } }
 .toggle { display:flex; gap:6px; margin:4px 0 0; }
 .toggle button { font:inherit; padding:4px 14px; border-radius:99px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
 .toggle button[aria-pressed=true] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
@@ -145,7 +146,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const MONTHS = ['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep'];
 const years = [...new Set(D.months.map(m => m.y))];
 const last = years[years.length - 1];
-const color = y => css('--s' + (((y - 1) % 5) + 1));
+const color = y => css('--y' + Math.max(1, 5 - (last - y)));  // newest year darkest, older years fade
 const label = y => 'Year ' + y;
 const slot = m => (Number(m.m.slice(5)) + 2) % 12;  // October = 0
 const partial = m => m.days < new Date(+m.m.slice(0, 4), +m.m.slice(5), 0).getDate();
@@ -202,7 +203,7 @@ function render() {
   season.data.datasets = yearLines(m => m[k]);
   cumulative.data.datasets = yearLines((m, y) => D.months.filter(n => n.y === y && n.m <= m.m).reduce((s, n) => s + n[k] * n.days, 0));
   history.data.datasets[0].data = D.months.map(m => m[k]);
-  history.data.datasets[0].backgroundColor = css(k === 'gas' ? '--s1' : '--s2');
+  history.data.datasets[0].backgroundColor = css(k === 'gas' ? '--gas' : '--el');
   [season, cumulative, history].forEach(c => c.update());
   document.querySelectorAll('.toggle button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === k));
 }
